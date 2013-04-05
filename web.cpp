@@ -198,7 +198,8 @@ void run_server(request_handler_t request_handler, log_handler_t log, int port)
             exit(3);
         }
 
-        for(hit=1; ;hit++) 
+        hit = 0;
+        while(1)
         {
             length = sizeof(cli_addr);
             if((socketfd = accept(listenfd, (struct sockaddr *)&cli_addr, &length)) < 0)
@@ -224,5 +225,7 @@ void run_server(request_handler_t request_handler, log_handler_t log, int port)
                             (void)close(socketfd);
                     }
             }
+            
+            hit++;
         }
 }
