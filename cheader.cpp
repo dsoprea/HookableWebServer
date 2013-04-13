@@ -8,7 +8,7 @@ CHeader::CHeader(char *name, char *value)
 
 CHeader::~CHeader()
 {
-//    free(name);
-//    free(value);
+    free(name);
+    free(value);
 }
 

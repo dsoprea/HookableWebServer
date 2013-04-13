@@ -21,11 +21,11 @@ class CResponse
                   char *response_body);
         ~CResponse(); 
     
-        float get_http_version() const { return http_version; }
-        int get_status_code() const { return status_code; }
-        char *get_reason_phrase() const { return reason_phrase; }
-        char *get_response_headers() const { return response_headers; }
-        char *get_response_body() const { return response_body; }
+        float get_http_version() { return http_version; }
+        int get_status_code() { return status_code; }
+        char *get_reason_phrase() { return reason_phrase; }
+        char *get_response_headers() { return response_headers; }
+        char *get_response_body() { return response_body; }
 };
 
 #endif

@@ -1,87 +1,134 @@
 #include "web.h"
 
-void log(int type, const char *s1, const char *s2, int num)
+static bool error_flag = false;
+static bool do_requests_flag = true;
+
+void log(log_type_e type, const char *s1, const char *s2, int num)
 {
-    int fd;
+    FILE *fd;
     char logbuffer[BUFSIZE * 2];
 
     switch (type)
     {
-        case ERROR: 
+        case log_type_e::T_ERROR: 
+            do_requests_flag = true;
+
             if(num != 0)
             {
                 sprintf(logbuffer, "HTTP/1.1 500 Error\rnContent-Type: text/plain\r\nConnection: close\r\n\r\n"
                                    "SORRY\r\n%s\r\n%s\r\n", s1, s2);
 
-                write(num, logbuffer, strlen(logbuffer));
+                SOCKET_WRITE(num, logbuffer, strlen(logbuffer));
             }
 
             sprintf(logbuffer, "ERROR: [%s]:[%s] Errno=(%d) exiting", s1, s2, errno); 
-
             break;
 
-        case LOG: 
-            (void)sprintf(logbuffer," INFO: [%s]:[%s]:%d",s1, s2,num); 
+        case log_type_e::T_INFO:
+            sprintf(logbuffer, "INFO: [%s]:[%s]:%d", s1, s2, num); 
             break;
     }
-
-    /* no checks here, nothing can be done a failure anyway */
-    if((fd = open("logs/web.log", O_CREAT| O_WRONLY | O_APPEND, 0644)) >= 0)
+/*
+    if((fd = fopen("logs/web.log", "a+")) != NULL)
     {
-        write(fd, logbuffer, strlen(logbuffer));
-        write(fd, "\n", 1);
-        close(fd);
+        fwrite(logbuffer, 1, strlen(logbuffer), fd);
+        fwrite("\n", 1, 1, fd);
+        fclose(fd);
     }
-    
+*/
+
+    printf("%s\n", logbuffer);
+
     if(type == ERROR)
-        exit(2);
+        do_requests_flag = true;
 }
 
-CResponse request_handler(const char *resource_path, vector<CHeader *> headers, const char *verb)
+CResponse *request_handler(const char *resource_path, vector<CHeader *> headers, const char *verb)
 {
     char response_headers[1000];
     const char *default_mimetype = "text/plain";
-    sprintf(response_headers, "Content-Type: %s\r\n", default_mimetype);
+    int count;
+    
+    count = SNPRINTF(response_headers, 1000, "Content-Type: %s\r\n", default_mimetype);
+    response_headers[count] = 0; // For windows.
 
     char response_body[5000];
-    char header_line[1000];
-    sprintf(response_body, "Request Path:\n\t%s\n\nHeaders:\n", resource_path);
+    count = SNPRINTF(response_body, 5000,  "Request Path:\n\t%s\n\nHeaders:\n", resource_path);
+    response_body[count] = 0; // For windows.
 
+    char header_line[1000];
     vector<CHeader *>::iterator header_it = headers.begin();
 
-    int i = strlen(response_body);
     while(header_it != headers.end())
     {
-        sprintf(header_line, "\t%s: %s\n", (*header_it)->get_name(), 
-                                           (*header_it)->get_value());
- 
+        count = SNPRINTF(header_line, 1000, "\t%s: %s\n", (*header_it)->get_name(), (*header_it)->get_value());
+        header_line[count] = 0; // For windows.
+
         int header_len = strlen(header_line);
-        strcpy(&response_body[i], header_line);
-        response_body[i + header_len] = 0;
+        strcat(response_body, header_line);
 
         ++header_it;
-        i += header_len;
     }
 
     float http_version = 1.1;
     int status_code = 200;
 
-    return CResponse(http_version, status_code, (char *)"OK", response_headers, 
-                     response_body);
+    return new CResponse(http_version, status_code, (char *)"OK", 
+                         response_headers, response_body);
 }
+
+void startup_handler(int port)
+{
+    printf("Hosting at [http://localhost:%d].\n", port);
+}
+
+void shutdown_handler()
+{
+
+}
+
+bool precycle_handler()
+{
+    printf("\nWaiting for request.\n\n");
+
+    return do_requests_flag;
+}
+
+#ifdef _WIN32
+BOOL WINAPI break_handler(DWORD ctrlType)
+{
+// TODO: Rewrite the accept() call to timeout and loop, so we can check for 
+//       quit events (incoming requests will just have to wait for a couple of 
+//       nanoseconds longer to be accepted, when that happens).
+    // Received CTRL+BREAK. Handle the next request, and then terminate.
+    if(ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT)
+    {
+        do_requests_flag = false;
+        return true;
+    }
+}
+#endif
 
 int main(int argc, char **argv)
 {
-    if(argc < 2)
-    {
-        printf("Please provide a port number.\n\n");
-        return 1;
-    }
-
-    int port = atoi(argv[1]);
-
     int result;
-    if((result = run_server(request_handler, log, port)) != 0)
+    int port = 0;
+
+#ifdef _WIN32
+    SetConsoleCtrlHandler(break_handler, true);
+#endif
+
+    server_callbacks_t callbacks = { 
+        startup_handler, 
+        shutdown_handler, 
+        log,
+        precycle_handler,
+        request_handler
+    };
+
+    if((result = run_server(callbacks, &port)) != 0)
+        return 1;
+    else if(error_flag)
         return 2;
     
     return 0;
