@@ -47,7 +47,7 @@
 					</folderInfo>
 					<sourceEntries>
 						<entry excluding="support|examples" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="examples"/>
+						<entry excluding="simple.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="examples"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="support"/>
 					</sourceEntries>
 				</configuration>
@@ -97,7 +97,7 @@
 					</folderInfo>
 					<sourceEntries>
 						<entry excluding="support|examples" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="examples"/>
+						<entry excluding="simple.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="examples"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="support"/>
 					</sourceEntries>
 				</configuration>

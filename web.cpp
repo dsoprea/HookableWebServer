@@ -8,7 +8,7 @@ static vector<ThreadWrapper *> finished_threads;
 
 Response get_404_response(string resource_path)
 {
-	return get_general_response(404, resource_path, "Not found.", "Not Found");
+	return get_general_response(404, resource_path + " not found.", "Not found.", "Not Found");
 }
 
 Response get_general_response(int status_code, string message,
