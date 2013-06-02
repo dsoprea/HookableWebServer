@@ -132,4 +132,7 @@
 			<resource resourceType="PROJECT" workspacePath="/HookableWebServer3Wip"/>
 		</configuration>
 	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.make.core.buildtargets">
+		<buildTargets/>
+	</storageModule>
 </cproject>
