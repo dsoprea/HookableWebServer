@@ -1,231 +1,422 @@
 #include "web.h"
-/*
-char *_strndup(char *buffer_old, int len)
-{
-    char *buffer_new = (char *)malloc(len + 1);
-    memcpy(buffer_new, buffer_old, len);
-    buffer_new[len] = 0;
 
-    return buffer_new;
+using namespace threading;
+
+static pthread_mutex_t locker = PTHREAD_MUTEX_INITIALIZER;
+static ThreadWrapper *main_thread;
+static vector<ThreadWrapper *> finished_threads;
+
+Response get_404_response(string resource_path)
+{
+	return get_general_response(404, resource_path, "Not found.", "Not Found");
 }
-*/
 
-/* this is a child web server process, so we can exit on errors */
-static void web(int fd, int hit, request_handler_t request_handler, log_handler_t log)
+Response get_general_response(int status_code, string message,
+							   string content_type, string reason,
+							   string headers)
 {
-        int j, buflen, len;
-        int file_fd;
-        long i, ret;
-        char buffer[BUFSIZE+1]; /* static so zero filled */
+	if(content_type == "")
+		content_type = "text/plain";
 
-        ret = read(fd, buffer, BUFSIZE);   /* read Web request in one go */
-        if(ret == 0 || ret == -1) {     /* read failure stop now */
-             log(SORRY,"failed to read browser request","",fd);
-             exit(3);
+	if(reason == "")
+		reason = "General";
+
+	stringstream ss;
+	ss << headers;
+	ss << "Content-Type: " << content_type << "\r\n";
+
+	return Response(status_code, reason, message, ss.str().c_str());
+}
+
+static int web(int fd, ServerInfo *server_info,
+			   RequestContext *request_context)
+{
+    int buflen;
+    long i, ret;
+
+    /* static so zero filled */
+    char buffer[BUFSIZE + 1];
+//    char message[200];
+	stringstream ss;
+
+// TODO: Read until done.
+    /* read Web request in one go */
+    ret = read(fd, buffer, BUFSIZE);
+    if(ret <= 0)
+    {
+        /* read failure stop now */
+        LOG_RESPOND_ERROR("failed to read browser request.", fd);
+        return -1;
+    }
+
+    buffer[ret] = 0;
+
+    // Iterate through the headers while we still have room for a two-
+    // character newline, and we haven't encountered a double-newline.
+
+    //log_info("Parsing request headers.");
+
+    string request_line;
+    bool request_line_found = false;
+    int found_at;
+    vector<Header> headers;
+	string body;
+
+    i = 0;
+    while(1)
+    {
+		char *found_at_raw = strstr(&buffer[i], HNL);
+		if(found_at_raw == NULL)
+			break;
+
+		found_at = found_at_raw - &buffer[i];
+
+		if(found_at == 0)
+			break;
+
+        if(request_line_found == false)
+        {
+            request_line = string(&buffer[i], found_at);
+            request_line_found = true;
+        }
+        else
+        {
+            string text(&buffer[i], found_at);
+
+            unsigned int colon_at;
+			if((colon_at = text.find(":")) == string::npos)
+                break;
+                           
+            string name(text, 0, colon_at);
+            string value(text, colon_at + 2, (found_at - i) - (colon_at + 2));
+
+            headers.push_back(Header(name, value));
         }
 
-        if(ret > 0 && ret < BUFSIZE)    /* return code is valid chars */
-            buffer[ret]=0;          /* terminate the buffer */
-        else 
-            buffer[0]=0;
+        i += found_at + HNLL;
+    }
 
-        // Loop over the content while we still have room for a two-character 
-        // newline, and we haven't encountered a double-newline.
+    if(request_line_found == false)
+        return -7;
 
-        char request_line[1000];
-        bool request_line_found = false;
-        int found_at;
-        char *found_at_raw;
-        char *copy_to;
-        vector<header_t> headers;
-        bool is_first_header = true;
+	body = string(&buffer[i + HNLL]);
 
-        i = 0;
-        while((found_at_raw = strstr(&buffer[i], HNL)) != NULL)
-        {
-            found_at = (found_at_raw - &buffer[i]);
-            if(found_at == 0)
-                break;
- 
-            char text[1000];
-            strncpy(text, &buffer[i], found_at);
-            text[found_at] = 0;
+    i = 0;
+    int found_state = 0;
+    string verb;
+    string resource_path;
+    string http_version;
+    while(found_state < 3)
+    {
+        string start_at = request_line.substr(i);
 
-            if(request_line_found == false)
-            {
-                strcpy(request_line, text);
-                request_line[strlen(text)] = 0;
-                
-                request_line_found = true;
-            }
-            else
-            {
-                char *colon_at_raw = strstr(text, ":");
-                
-                if(colon_at_raw == NULL)
-                    break;
-                               
-                int colon_at = (int)(colon_at_raw - text);
+        size_t found_at;
+		if((found_at = start_at.find(" ")) == string::npos)
+		{
+			if(start_at.substr(0, 5) != "HTTP/")
+                return -6;
 
-                header_t header;
+            http_version = start_at.substr(5);
+            break;
+        }
+
+        string component(request_line, i, found_at);
+
+        if(found_state == 0)
+            verb = component;
+
+		else if(found_state == 1)
+            resource_path = component;
+
+        i += component.size() + 1;
+        found_state++;
+    }
+
+    if(verb == "" || resource_path == "" || http_version == "")
+    {
+        LOG_RESPOND_ERROR("Request-line was not completely parsed.", fd);
+        return -4;
+    }
+
+	request_handler_t handler = server_info->get_request_handler();
+	Response response = handler(server_info, resource_path, headers, verb,
+							     body);
+
+	ss.clear();
+	ss.str(string());
+
+	ss << "HTTP/"
+	   << showpoint << setprecision(2)
+	   << response.get_http_version() << " "
+	   << response.get_status_code() << " "
+	   << response.get_reason_phrase() << "\r\n"
+	   << response.get_response_headers() << "\r\n"
+	   << response.get_response_body();
+
+	string response_text = ss.str();
+
+    i = 0;
+    int sent;
+	buflen = response_text.size();
+    int send_length;
+    char chunk[BUFSIZE];
+    while(i < buflen)
+    {
+        send_length = min(BUFSIZE, buflen - i);
+        strncpy(chunk, &response_text[i], send_length);
+        sent = write(fd, chunk, send_length);
+
+        if(sent < BUFSIZE)
+            break;
+
+        i += BUFSIZE;
+    }
     
-                strncpy(header.name, text, colon_at);
-                header.name[colon_at] = 0;
-                
-                int value_len = found_at - (colon_at + 2);
-                strncpy(header.value, &text[colon_at + 2], value_len);
-                header.value[value_len] = 0;
-
-                headers.push_back(header);
-            }
-
-            i += found_at + HNLL;
-        }
-
-        i = 0;
-        int found_state = 0;
-        char verb[10];
-        char resource_path[255];
-        char http_version[5];
-        while(found_state < 3)
-        {
-            char *start_at = &request_line[i];
-
-            char *found_at_raw = strstr(start_at, " ");
-            if(found_at_raw == NULL)
-            {
-                strcpy(http_version, start_at);
-                http_version[strlen(start_at)] = 0;
-                break;
-            }
-
-            int found_at = (int)(found_at_raw - start_at);
-
-            char component[200];
-            strncpy(component, &request_line[i], found_at);
-            component[found_at] = 0;
-
-            int comp_len = strlen(component);
-
-            if(found_state == 0)
-            {
-                strcpy(verb, component);
-                verb[comp_len] = 0;
-            }
-            else if(found_state == 1)
-            {
-                strcpy(resource_path, component);
-                resource_path[comp_len] = 0;
-            }
-
-            i += comp_len + 1;
-            found_state++;
-        }
-
-        response_t response = request_handler(resource_path, headers, verb);
-        char response_text[2000];
-        sprintf(response_text, "HTTP/%.1f %d %s\r\n%s\r\n%s", 
-            response.http_version, response.status_code, 
-            response.reason_phrase, 
-            response.response_headers, 
-            response.response_body);
-
-        i = 0;
-        int sent;
-        buflen = strlen(response_text);
-        int send_length;
-        char chunk[BUFSIZE];
-        while(i < buflen)
-        {
-            send_length = min(BUFSIZE, buflen - i);
-            strncpy(chunk, &response_text[i], send_length);
-            sent = write(fd, chunk, send_length);
-
-            if(sent < BUFSIZE)
-                break;
-
-            i += BUFSIZE;
-        }
+    return 0;
 }
 
-void run_server(request_handler_t request_handler, log_handler_t log, int port)
+bool handle_request(void *requestContextRaw)
 {
-        int i, pid, listenfd, socketfd, hit;
-        socklen_t length;
-        char *str;
-        static struct sockaddr_in cli_addr; /* static = initialised to zeros */
-        static struct sockaddr_in serv_addr; /* static = initialised to zeros */
+    RequestContext *request_context = (RequestContext *)requestContextRaw;
 
-        printf("Hosting at [http://localhost:%d].\n", port);
+    int socketfd = request_context->GetSocketFd();
+	ServerInfo *server_info = request_context->GetServerInfo();
 
-        /* Become deamon + unstopable and no zombies children 
-           (= no wait()) */
-/*
-        if(fork() != 0)
-                return 0; /* parent returns OK to shell /
-*/
-        (void)signal(SIGCLD, SIG_IGN); /* ignore child death */
-        (void)signal(SIGHUP, SIG_IGN); /* ignore terminal hangups */
+    int result = web(socketfd, server_info, request_context);
 
-        for(i=0;i<32;i++)
-                (void)close(i);      /* close open files /
-/*
-        (void)setpgrp();             /* break away from process group /
+    // This was opened when we received this particular request, before the 
+    // thread spawned.
+    close(socketfd);
 
-        log(LOG,"server starting",argv[1],getpid());
-*/
-        /* setup the network socket */
+    pthread_mutex_lock(&locker);
+	finished_threads.push_back(request_context->GetThread());
+	pthread_mutex_unlock(&locker);
 
-        if((listenfd = socket(AF_INET, SOCK_STREAM,0)) == -1)
-        {
-            log(ERROR, "system call","socket",0);
-            exit(3);
-        }
+    // This was allocated just before our thread was spawned. Free our 
+    // arbitrary thread data.
+    delete request_context;
 
-        serv_addr.sin_family = AF_INET;
-        serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        serv_addr.sin_port = htons(port);
+    if(result != 0)
+    {
+        LOG_ERROR_SOCKET("Server instance returned failure.", "web");
+        return false;
+    }
 
-        if(bind(listenfd, (struct sockaddr *)&serv_addr,sizeof(serv_addr)) <0)
-        {
-            log(ERROR,"system call","bind",0);
-            exit(3);
-        }
-
-        if( listen(listenfd,64) <0)
-        {
-            log(ERROR,"system call","listen",0);
-            exit(3);
-        }
-
-        hit = 0;
-        while(1)
-        {
-            length = sizeof(cli_addr);
-            if((socketfd = accept(listenfd, (struct sockaddr *)&cli_addr, &length)) < 0)
-            {
-                log(ERROR,"system call","accept",0);
-                exit(3);
-            }
-
-            char message[200];
-            sprintf(message, "Handling hit (%d).\n", hit);
-            
-            log(LOG, message, "", 0);
-
-            if((pid = fork()) < 0) {
-                    log(ERROR,"system call","fork",0);
-                    exit(3);
-            }
-            else {
-                    if(pid == 0) {  /* child */
-                            (void)close(listenfd);
-                            web(socketfd, hit, request_handler, log); /* never returns */
-                    } else {        /* parent */
-                            (void)close(socketfd);
-                    }
-            }
-            
-            hit++;
-        }
+    return true;
 }
+
+static bool cleanup_finished_threads()
+{
+	pthread_mutex_lock(&locker);
+
+	while(finished_threads.empty() == false)
+	{
+		ThreadWrapper *thread = finished_threads[0];
+		finished_threads.erase(finished_threads.begin());
+
+		//stringstream ss;
+		//ss << "Cleaning-up thread [" << thread << "].";
+		//log_info(ss.str());
+
+		thread->Join();
+		delete thread;
+	}
+
+	pthread_mutex_unlock(&locker);
+
+	return true;
+}
+
+bool run_server_internal(ServerInfo *server_info)
+{
+    int listenfd;
+    int socketfd;
+    socklen_t length;
+    static struct sockaddr_in cli_addr; /* static = initialised to zeros */
+    static struct sockaddr_in serv_addr; /* static = initialised to zeros */
+
+    int port = server_info->get_port();
+
+    if((listenfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        LOG_ERROR_SOCKET("system call", "socket");
+        return false;
+    }
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_addr.sin_port = htons(port);
+
+    if(bind(listenfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+    {
+        LOG_ERROR_SOCKET("system call", "bind");
+        return false;
+    }
+
+    if(listen(listenfd, 64) <0)
+    {
+        LOG_ERROR_SOCKET("system call", "listen");
+        return false;
+    }
+
+    if(port == 0)
+    {
+        unsigned int addrlen = sizeof(serv_addr);
+        if(getsockname(listenfd, (struct sockaddr *)&serv_addr, &addrlen) != 0)
+        {
+            LOG_ERROR_SOCKET("system call", "getsockname");
+            return false;
+        }
+
+        port = ntohs(serv_addr.sin_port);
+    }
+
+    server_info->set_port(port);
+
+    if(server_info->get_startup_handler())
+        server_info->get_startup_handler()(server_info, port);
+
+	pthread_mutex_init(&locker, NULL);
+
+	struct pollfd poll_sockets[] = {
+	    { listenfd, POLLIN }
+	};
+
+	int error = 0;
+
+    while(1)
+    {
+		cleanup_finished_threads();
+	
+		bool quit = false;
+		while(error == 0)
+		{
+			if(server_info->get_continue_flag_handler()(server_info) == false)
+			{
+				quit = true;
+				break;
+			}
+
+			// Use a select to detect a connection without having to sit on an 
+			// accept() indefinitely. This allows us to very frequently check 
+			// server_info.precycle_handler(), which will allow us to quit 
+			// whenever the host application wants us to (like on a 
+			// CTRL+BREAK).
+
+			int ready = poll(poll_sockets, 3, 1000);
+			if(ready < 0)
+			{
+				LOG_ERROR_SOCKET("system call", "poll");
+
+				error = 4;
+				break;
+			}
+			else if(ready == 0)
+				continue;
+
+			length = sizeof(cli_addr);
+			if((socketfd = accept(listenfd, (struct sockaddr *)&cli_addr,
+								  &length)) < 0)
+			{
+				LOG_ERROR_SOCKET("system call", "accept");
+
+				error = 2;
+				break;
+			}
+
+		    break;
+		}
+
+		if(quit || error != 0)
+			break;
+
+        RequestContext *request_context = new RequestContext(socketfd,
+        													 server_info);
+
+        ThreadWrapper *thread = new ThreadWrapper("Request worker.",
+        									      handle_request,
+        									      request_context);
+
+        request_context->SetThread(thread);
+
+		if(thread->Start() == false)
+		{
+			error = 3;
+            break;
+		}
+    }
+
+	cleanup_finished_threads();
+
+	pthread_mutex_destroy(&locker);
+
+	if(server_info->get_shutdown_handler())
+        server_info->get_shutdown_handler()(server_info);
+
+	close(listenfd);
+
+	return (error == 0);
+}
+
+bool run_server_in_thread(void *server_info_raw)
+{
+	ServerInfo *server_info = (ServerInfo *)server_info_raw;
+
+	// If this fails, the main-server thread will timeout waiting for a port,
+	// and terminate.
+	run_server_internal(server_info);
+	
+	delete main_thread;
+
+	return true;
+}
+
+int run_server(ServerInfo *server_info, bool start_in_new_thread,
+		       ThreadWrapper **main_thread_)
+{
+	if(start_in_new_thread == false)
+	{
+		return run_server_internal(server_info);
+// TODO: Clean-up server-info allocations (when NOT running as a thread).
+	}
+	else
+	{
+		main_thread = new ThreadWrapper("Web server.", run_server_in_thread,
+										server_info);
+		
+		if(main_thread_ != NULL)
+			*main_thread_ = main_thread;
+
+		if(main_thread->Start() == false)
+			return -99;
+	}
+
+	return 0;
+}
+
+ServerInfo::ServerInfo(startup_handler_t startup_handler_,
+					   shutdown_handler_t shutdown_handler_,
+					   log_handler_t log_handler_,
+					   continue_flag_handler_t continue_flag_handler_,
+					   request_handler_t request_handler_,
+					   int port_,
+					   void *request_handler_data_,
+					   void *server_data_) // : BaseObject("ServerInfo")
+{
+	startup_handler = startup_handler_;
+	shutdown_handler = shutdown_handler_;
+	log_handler = log_handler_;
+	continue_flag_handler = continue_flag_handler_;
+	request_handler = request_handler_;
+	port = port_;
+	request_handler_data = request_handler_data_;
+	server_data = server_data_;
+}
+
+RequestContext::RequestContext(int socketfd_, ServerInfo *server_info_) // : BaseObject("RequestContext")
+{
+	socketfd = socketfd_;
+	server_info = server_info_;
+	thread = NULL;
+}
+

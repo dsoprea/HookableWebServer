@@ -3,49 +3,157 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
 #include <signal.h>
-#include <sys/types.h>
-#include <sys/socket.h>
+#include <time.h>
+#include <pthread.h>
+#include <unistd.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/poll.h>
 
 #include <vector>
+#include <string>
+#include <sstream>
+#include <iomanip>
+
+#include "support/thread.h"
+#include "response.h"
+#include "header.h"
 
 using namespace std;
-
+using namespace threading;
 
 #define BUFSIZE 8096L
-#define ERROR 42
-#define SORRY 43
-#define LOG   44
 
 #define HNL "\r\n"
 #define HNLL 2
 
-typedef struct 
+enum web_log_e { LT_ERROR, LT_INFO };
+
+#define LOG_RESPOND_ERROR(msg, fd) { \
+	if(server_info->get_log_handler()) \
+		server_info->get_log_handler()(server_info, LT_ERROR, msg, "", fd); \
+}
+
+#define LOG_ERROR_SOCKET(msg, operation) { \
+	if(server_info->get_log_handler()) \
+		server_info->get_log_handler()(server_info, \
+									   LT_ERROR, \
+									   msg, \
+									   operation, \
+									   0); \
+}
+
+/*
+#define LOG_INFO(msg) {
+	if(server_info->get_log_handler())
+		server_info->get_log_handler()(server_info, LT_INFO, msg, "", 0);
+}
+*/
+
+typedef void (*startup_handler_t)(void *server_info, int port);
+typedef void (*shutdown_handler_t)(void *server_info);
+typedef bool (*continue_flag_handler_t)(void *server_info);
+typedef Response (*request_handler_t)(void *server_info, string resource_path,
+									   vector<Header> headers, string verb,
+									   string body);
+
+typedef void (*log_handler_t)(void *server_info, web_log_e type,
+							  const char *s1, const char *s2, int num);
+
+class ServerInfo
 {
-    float http_version;
-    int status_code;
-    char reason_phrase[50];
-    char response_headers[1000];
-    char response_body[5000];
-} response_t;
+    // (optional) Triggered after the socket is configured.
+    startup_handler_t startup_handler;
+    
+    // (optional) Triggered after requests are stopped, before the socket is 
+    // closed.
+    shutdown_handler_t shutdown_handler;
+    
+    // (optional) Receives logging verbosity.
+    log_handler_t log_handler;
 
-typedef struct
+    // Called regularly. Returns FALSE to immediately quit the main request 
+	// loop.
+    continue_flag_handler_t continue_flag_handler;
+
+    // Request handler.
+    request_handler_t request_handler;
+
+	// (optional) Extra request-handler data.
+	void *request_handler_data;
+
+	// (optional) Server data. This can be used as a way to keep state between
+	// all of the callbacks.
+	void *server_data;
+
+	int port;
+
+	public:
+		ServerInfo(startup_handler_t startup_handler,
+				   shutdown_handler_t shutdown_handler,
+				   log_handler_t log_handler,
+				   continue_flag_handler_t continue_flag_handler,
+				   request_handler_t request_handler,
+				   int port=0,
+				   void *request_handler_data=NULL,
+				   void *server_data=NULL);
+
+		startup_handler_t get_startup_handler() const
+			{ return startup_handler; }
+
+		shutdown_handler_t get_shutdown_handler() const
+			{ return shutdown_handler; }
+
+		log_handler_t get_log_handler() const { return log_handler; }
+		continue_flag_handler_t get_continue_flag_handler() const
+			{ return continue_flag_handler; }
+
+		request_handler_t get_request_handler() const
+			{ return request_handler; }
+		int get_port() const { return port; }
+		void *get_request_handler_data() const { return request_handler_data; }
+		void *get_server_data() const { return server_data; }
+		
+		void set_port(int port_) { port = port_; }
+		void set_request_handler_data(void *request_handler_data_)
+			{ request_handler_data = request_handler_data_; }
+
+		void set_server_data(void *server_data_)
+			{ server_data = server_data_; }
+};
+
+class RequestContext
 {
-    char name[50];
-    char value[500];
-} header_t;
+    int socketfd;
+    ServerInfo *server_info;
+	ThreadWrapper *thread;
 
-typedef response_t (*request_handler_t)(const char *resource_path, vector<header_t> headers, const char *verb);
-typedef void (*log_handler_t)(int type, const char *s1, const char *s2, int num);
+	public:
+		RequestContext(int socketfd, ServerInfo *server_info);
 
-void run_server(request_handler_t request_handler, log_handler_t log, int port);
-//char *_strndup(char *buffer_old, int len);
+		int GetSocketFd() const { return socketfd; }
+		ServerInfo *GetServerInfo() const { return server_info; }
+		ThreadWrapper *GetThread() const { return thread; }
+
+		void SetSocketFd(int value) { socketfd = value; }
+		void SetServerInfo(ServerInfo *value) { server_info = value; }
+		void SetThread(ThreadWrapper *value) { thread = value; }
+};
+
+int run_server(ServerInfo *server_info, bool start_in_new_thread,
+			   ThreadWrapper **main_thread=NULL);
+
+bool cleanup_server();
+
+Response get_404_response(string resource_path);
+Response get_general_response(int status_code, string message,
+							   string content_type="", string reason="",
+							   string headers="");
 
 #endif
-
