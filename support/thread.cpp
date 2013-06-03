@@ -91,8 +91,8 @@ namespace threading
 			// Allocate more.
 
 			int nextSlotIndex = threads.size();
-			int newSize = min(nextSlotIndex + THREADS_ALLOC_STEP_SIZE,
-							  THREADS_MAX_THREADS);
+			int newSize = std::min(nextSlotIndex + THREADS_ALLOC_STEP_SIZE,
+							       THREADS_MAX_THREADS);
 
 			// Have we hit the max?
 			if(newSize >= THREADS_MAX_THREADS)
@@ -176,7 +176,7 @@ namespace threading
         return true;
 	}
 
-    ThreadWrapper::ThreadWrapper(string description_,
+    ThreadWrapper::ThreadWrapper(std::string description_,
     		   	   	   	   	     thread_boot_t thread_boot_,
     		   	   	   	   	     void *data)
     {

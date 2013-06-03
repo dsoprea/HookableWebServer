@@ -3,20 +3,21 @@
 
 #include <string>
 
-using namespace std;
-
-class Header
+namespace web
 {
-    string name;
-    string value;
-    
-    public:
-        Header(string name, string value);
-        ~Header();
-    
-        string get_name() const { return name; }
-        string get_value() const { return value; }
-};
+	class Header
+	{
+		std::string name;
+		std::string value;
+
+		public:
+			Header(std::string name, std::string value);
+			~Header();
+
+			std::string get_name() const { return name; }
+			std::string get_value() const { return value; }
+	};
+}
 
 #endif
 

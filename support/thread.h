@@ -1,20 +1,13 @@
 #ifndef __THREAD_H
 #define __THREAD_H
 
-//#include "stdafx.h"
-//#include <afx.h>
-//#include <afxwin.h>
 #include <pthread.h>
 
 #include <vector>
 #include <algorithm>
 #include <string>
 
-//#include "base_object.h"
-
 #include "thread_constants.h"
-
-using namespace std;
 
 #define THREADS_ALLOC_STEP_SIZE 10
 #define THREADS_MAX_THREADS 100
@@ -74,12 +67,12 @@ namespace threading
         thread_boot_t threadBoot;
         void *threadData;
 		ThreadInfo *threadInfo;
-		string description;
+		std::string description;
 
         void ThreadFunc(void *param);
 
     public:
-        ThreadWrapper(string description, thread_boot_t threadBoot_,
+        ThreadWrapper(std::string description, thread_boot_t threadBoot_,
         			  void *data=NULL);
         ~ThreadWrapper();
 		ThreadInfo *GetThreadInfo() const { return threadInfo; };
@@ -90,8 +83,8 @@ namespace threading
     class ThreadManager
     {
         pthread_mutex_t slotLocker;
-        vector<ThreadInfo *> threads;
-        vector<int> availableSlots;
+        std::vector<ThreadInfo *> threads;
+        std::vector<int> availableSlots;
         int nextIndex;
 		int GetAvailableSn();
 

@@ -1,12 +1,9 @@
 #ifndef __WEB_H
 #define __WEB_H
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
-#include <signal.h>
 #include <time.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -25,15 +22,10 @@
 #include "response.h"
 #include "header.h"
 
-using namespace std;
-using namespace threading;
-
 #define BUFSIZE 8096L
 
 #define HNL "\r\n"
 #define HNLL 2
-
-enum web_log_e { LT_ERROR, LT_INFO };
 
 #define LOG_RESPOND_ERROR(msg, fd) { \
 	if(server_info->get_log_handler()) \
@@ -49,111 +41,113 @@ enum web_log_e { LT_ERROR, LT_INFO };
 									   0); \
 }
 
-/*
-#define LOG_INFO(msg) {
-	if(server_info->get_log_handler())
-		server_info->get_log_handler()(server_info, LT_INFO, msg, "", 0);
-}
-*/
-
-typedef void (*startup_handler_t)(void *server_info, int port);
-typedef void (*shutdown_handler_t)(void *server_info);
-typedef bool (*continue_flag_handler_t)(void *server_info);
-typedef Response (*request_handler_t)(void *server_info, string resource_path,
-									   vector<Header> headers, string verb,
-									   string body);
-
-typedef void (*log_handler_t)(void *server_info, web_log_e type,
-							  const char *s1, const char *s2, int num);
-
-class ServerInfo
+namespace web
 {
-    // (optional) Triggered after the socket is configured.
-    startup_handler_t startup_handler;
-    
-    // (optional) Triggered after requests are stopped, before the socket is 
-    // closed.
-    shutdown_handler_t shutdown_handler;
-    
-    // (optional) Receives logging verbosity.
-    log_handler_t log_handler;
+	enum web_log_e { LT_ERROR, LT_INFO };
 
-    // Called regularly. Returns FALSE to immediately quit the main request 
-	// loop.
-    continue_flag_handler_t continue_flag_handler;
+	typedef void (*startup_handler_t)(void *server_info, int port);
+	typedef void (*shutdown_handler_t)(void *server_info);
+	typedef bool (*continue_flag_handler_t)(void *server_info);
+	typedef Response (*request_handler_t)(void *server_info,
+										  std::string resource_path,
+										  std::vector<Header> headers,
+										  std::string verb,
+										  std::string body);
 
-    // Request handler.
-    request_handler_t request_handler;
+	typedef void (*log_handler_t)(void *server_info, web_log_e type,
+								  const char *s1, const char *s2, int num);
 
-	// (optional) Extra request-handler data.
-	void *request_handler_data;
+	class ServerInfo
+	{
+		// (optional) Triggered after the socket is configured.
+		startup_handler_t startup_handler;
 
-	// (optional) Server data. This can be used as a way to keep state between
-	// all of the callbacks.
-	void *server_data;
-
-	int port;
-
-	public:
-		ServerInfo(startup_handler_t startup_handler,
-				   shutdown_handler_t shutdown_handler,
-				   log_handler_t log_handler,
-				   continue_flag_handler_t continue_flag_handler,
-				   request_handler_t request_handler,
-				   int port=0,
-				   void *request_handler_data=NULL,
-				   void *server_data=NULL);
-
-		startup_handler_t get_startup_handler() const
-			{ return startup_handler; }
-
-		shutdown_handler_t get_shutdown_handler() const
-			{ return shutdown_handler; }
-
-		log_handler_t get_log_handler() const { return log_handler; }
-		continue_flag_handler_t get_continue_flag_handler() const
-			{ return continue_flag_handler; }
-
-		request_handler_t get_request_handler() const
-			{ return request_handler; }
-		int get_port() const { return port; }
-		void *get_request_handler_data() const { return request_handler_data; }
-		void *get_server_data() const { return server_data; }
+		// (optional) Triggered after requests are stopped, before the socket is
+		// closed.
+		shutdown_handler_t shutdown_handler;
 		
-		void set_port(int port_) { port = port_; }
-		void set_request_handler_data(void *request_handler_data_)
-			{ request_handler_data = request_handler_data_; }
+		// (optional) Receives logging verbosity.
+		log_handler_t log_handler;
 
-		void set_server_data(void *server_data_)
-			{ server_data = server_data_; }
-};
+		// Called regularly. Returns FALSE to immediately quit the main request
+		// loop.
+		continue_flag_handler_t continue_flag_handler;
 
-class RequestContext
-{
-    int socketfd;
-    ServerInfo *server_info;
-	ThreadWrapper *thread;
+		// Request handler.
+		request_handler_t request_handler;
 
-	public:
-		RequestContext(int socketfd, ServerInfo *server_info);
+		// (optional) Extra request-handler data.
+		void *request_handler_data;
 
-		int GetSocketFd() const { return socketfd; }
-		ServerInfo *GetServerInfo() const { return server_info; }
-		ThreadWrapper *GetThread() const { return thread; }
+		// (optional) Server data. This can be used as a way to keep state between
+		// all of the callbacks.
+		void *server_data;
 
-		void SetSocketFd(int value) { socketfd = value; }
-		void SetServerInfo(ServerInfo *value) { server_info = value; }
-		void SetThread(ThreadWrapper *value) { thread = value; }
-};
+		int port;
 
-int run_server(ServerInfo *server_info, bool start_in_new_thread,
-			   ThreadWrapper **main_thread=NULL);
+		public:
+			ServerInfo(startup_handler_t startup_handler,
+					   shutdown_handler_t shutdown_handler,
+					   log_handler_t log_handler,
+					   continue_flag_handler_t continue_flag_handler,
+					   request_handler_t request_handler,
+					   int port=0,
+					   void *request_handler_data=NULL,
+					   void *server_data=NULL);
 
-bool cleanup_server();
+			startup_handler_t get_startup_handler() const
+				{ return startup_handler; }
 
-Response get_404_response(string resource_path);
-Response get_general_response(int status_code, string message,
-							   string content_type="", string reason="",
-							   string headers="");
+			shutdown_handler_t get_shutdown_handler() const
+				{ return shutdown_handler; }
+
+			log_handler_t get_log_handler() const { return log_handler; }
+			continue_flag_handler_t get_continue_flag_handler() const
+				{ return continue_flag_handler; }
+
+			request_handler_t get_request_handler() const
+				{ return request_handler; }
+			int get_port() const { return port; }
+			void *get_request_handler_data() const { return request_handler_data; }
+			void *get_server_data() const { return server_data; }
+
+			void set_port(int port_) { port = port_; }
+			void set_request_handler_data(void *request_handler_data_)
+				{ request_handler_data = request_handler_data_; }
+
+			void set_server_data(void *server_data_)
+				{ server_data = server_data_; }
+	};
+
+	class RequestContext
+	{
+		int socketfd;
+		ServerInfo *server_info;
+		threading::ThreadWrapper *thread;
+
+		public:
+			RequestContext(int socketfd, ServerInfo *server_info);
+
+			int GetSocketFd() const { return socketfd; }
+			ServerInfo *GetServerInfo() const { return server_info; }
+			threading::ThreadWrapper *GetThread() const { return thread; }
+
+			void SetSocketFd(int value) { socketfd = value; }
+			void SetServerInfo(ServerInfo *value) { server_info = value; }
+			void SetThread(threading::ThreadWrapper *value) { thread = value; }
+	};
+
+	int run_server(ServerInfo *server_info, bool start_in_new_thread,
+				   threading::ThreadWrapper **main_thread=NULL);
+
+	bool cleanup_server();
+
+	Response get_general_response(int status_code, std::string message,
+								  std::string content_type="",
+								  std::string reason="",
+								  std::string headers="");
+
+	Response get_404_response(std::string resource_path);
+}
 
 #endif
