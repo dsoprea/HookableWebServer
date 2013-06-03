@@ -21,9 +21,10 @@ bool continue_flag_handler(void *server_info)
 }
 
 web::Response ah_hello(void *server_info, router::ActionDescriptor action,
-                  std::string resource_path, std::map<std::string,
-                  std::string> parameters, std::vector<web::Header> headers,
-                  router::request_verb_e verb, std::string body)
+                       std::string resource_path, std::map<std::string,
+                       std::string> parameters,
+                       std::vector<web::Header> headers,
+                       router::request_verb_e verb, std::string body)
 {
     std::string response_body = "Hello <b>there</b>. You requested "
                                 "[" + resource_path + "].";
@@ -54,12 +55,12 @@ int main()
     router::RequestRouterData request_router_data(&mappings);
 
     web::ServerInfo server_info(startup_handler,
-                                   shutdown_handler,
-                                   log_handler,
-                                   continue_flag_handler,
-                                   router::request_router,
-                                   0,
-                                   &request_router_data);
+                                shutdown_handler,
+                                log_handler,
+                                continue_flag_handler,
+                                router::request_router,
+                                0,
+                                &request_router_data);
 
     return run_server(&server_info, false, NULL);
 }

@@ -41,8 +41,8 @@ bool continue_flag_handler(void *server_info)
 }
 
 web::Response request_handler(void *server_info, std::string resource_path,
-                                 std::vector<web::Header> headers,
-                                 std::string verb, std::string body)
+                              std::vector<web::Header> headers,
+                              std::string verb, std::string body)
 {
     // Receives every request (when used the request-router, the router
     // receives all requests, and passes them to your "actions".
