@@ -7,43 +7,43 @@ namespace threading
 
     ThreadManager threadManager;
 
-	ThreadInfo::ThreadInfo(int sn_, char state_,
-						   thread_boot_t threadInnerBoot_, void *data_,
-						   void *manager_, void *thread_, unsigned int id_,
-						   pthread_t handle_)
-	{
-		sn = sn_;
-		state = state_;
-		threadInnerBoot = threadInnerBoot_;
-		data = data_;
-		manager = manager_;
-		thread = thread_;
-		id = id_;
-		handle = handle_;
-	}
+    ThreadInfo::ThreadInfo(int sn_, char state_,
+                           thread_boot_t threadInnerBoot_, void *data_,
+                           void *manager_, void *thread_, unsigned int id_,
+                           pthread_t handle_)
+    {
+        sn = sn_;
+        state = state_;
+        threadInnerBoot = threadInnerBoot_;
+        data = data_;
+        manager = manager_;
+        thread = thread_;
+        id = id_;
+        handle = handle_;
+    }
 
-	ThreadInfo::ThreadInfo(int sn_)
-	{
-		sn = sn_;
-		state = 0;
-		threadInnerBoot = NULL;
-		data = NULL;
-		manager = NULL;
-		thread = NULL;
-		id = 0;
-		handle = 0;
-	}
+    ThreadInfo::ThreadInfo(int sn_)
+    {
+        sn = sn_;
+        state = 0;
+        threadInnerBoot = NULL;
+        data = NULL;
+        manager = NULL;
+        thread = NULL;
+        id = 0;
+        handle = 0;
+    }
 
     void *_WindowsThreadHandler(void *param)
     {
         // A new thread starts here, and then calls the function originally
-    	// passed by the user.
+        // passed by the user.
 
         ThreadInfo *threadInfo = (ThreadInfo *)param;
         threadInfo->SetId(pthread_self());
 
         threadInfo->SetState(TS_RUNNING);
-		threadInfo->GetThreadInnerBoot()(threadInfo->GetData());
+        threadInfo->GetThreadInnerBoot()(threadInfo->GetData());
         threadInfo->SetState(TS_ENDED);
 
         ThreadManager *manager = (ThreadManager *)threadInfo->GetManager();
@@ -61,63 +61,63 @@ namespace threading
 
     ThreadManager::~ThreadManager()
     {
-		Cleanup();
-	}
+        Cleanup();
+    }
 
-	bool ThreadManager::Cleanup()
-	{
+    bool ThreadManager::Cleanup()
+    {
 // We disabled doing this because it made thread lifecycles more ambiguous.
-/*		size_t i = 0;
-		while(i < threads.size())
+/*        size_t i = 0;
+        while(i < threads.size())
         {
-			ThreadInfo *thread = threads[i];
+            ThreadInfo *thread = threads[i];
 
             if(thread != NULL)
-	            delete thread;
+                delete thread;
 
-			i++;
+            i++;
         }
 */
-		pthread_mutex_destroy(&slotLocker);
+        pthread_mutex_destroy(&slotLocker);
 
-		return true;
-	}
+        return true;
+    }
 
-	int ThreadManager::GetAvailableSn()
-	{
-		if(availableSlots.empty())
-		{
-			// No thread resource slots are available (allocated and unused).
-			// Allocate more.
+    int ThreadManager::GetAvailableSn()
+    {
+        if(availableSlots.empty())
+        {
+            // No thread resource slots are available (allocated and unused).
+            // Allocate more.
 
-			int nextSlotIndex = threads.size();
-			int newSize = std::min(nextSlotIndex + THREADS_ALLOC_STEP_SIZE,
-							       THREADS_MAX_THREADS);
+            int nextSlotIndex = threads.size();
+            int newSize = std::min(nextSlotIndex + THREADS_ALLOC_STEP_SIZE,
+                                   THREADS_MAX_THREADS);
 
-			// Have we hit the max?
-			if(newSize >= THREADS_MAX_THREADS)
-				return -1;
+            // Have we hit the max?
+            if(newSize >= THREADS_MAX_THREADS)
+                return -1;
 
-			// A vector that describes all threads.
-			threads.resize(nextSlotIndex + THREADS_ALLOC_STEP_SIZE, NULL);
+            // A vector that describes all threads.
+            threads.resize(nextSlotIndex + THREADS_ALLOC_STEP_SIZE, NULL);
 
-			// Load the sorted list of available serial-numbers/slot-numbers.
+            // Load the sorted list of available serial-numbers/slot-numbers.
 
-			int i = 0;
-			while(i < THREADS_ALLOC_STEP_SIZE)
-			{
-				if(ReleaseSn(nextSlotIndex + i) == false)
-					return -1;
+            int i = 0;
+            while(i < THREADS_ALLOC_STEP_SIZE)
+            {
+                if(ReleaseSn(nextSlotIndex + i) == false)
+                    return -1;
 
-				i++;
-			}
-		}
+                i++;
+            }
+        }
 
-		int nextSlotIndex = availableSlots[0];
-		availableSlots.erase(availableSlots.begin());
+        int nextSlotIndex = availableSlots[0];
+        availableSlots.erase(availableSlots.begin());
 
-		return nextSlotIndex;
-	}
+        return nextSlotIndex;
+    }
 
     bool ThreadManager::NotifyThreadStop(ThreadInfo *threadInfo)
     {
@@ -126,15 +126,15 @@ namespace threading
 
         pthread_mutex_lock(&slotLocker);
 
-		int sn = threadInfo->GetSn();
+        int sn = threadInfo->GetSn();
 
         //delete threadInfo;
-		ReleaseSn(sn);
+        ReleaseSn(sn);
 
         pthread_mutex_unlock(&slotLocker);
 
-		//if(result == false)
-			//return false;
+        //if(result == false)
+            //return false;
 
         return true;
     }
@@ -145,11 +145,11 @@ namespace threading
 
         pthread_mutex_lock(&slotLocker);
 
-		if((sn = GetAvailableSn()) == -1)
-		{
-			pthread_mutex_unlock(&slotLocker);
-			return false;
-		}
+        if((sn = GetAvailableSn()) == -1)
+        {
+            pthread_mutex_unlock(&slotLocker);
+            return false;
+        }
 
         ThreadInfo *threadInfo = new ThreadInfo(sn);
 
@@ -163,50 +163,50 @@ namespace threading
         return true;
     }
 
-	bool ThreadManager::ReleaseSn(int sn)
-	{
-		unsigned insert_at = 0;
-		if(availableSlots.empty() == false)
-			while(insert_at < availableSlots.size() &&
-				  sn > availableSlots[insert_at])
-				insert_at++;
+    bool ThreadManager::ReleaseSn(int sn)
+    {
+        unsigned insert_at = 0;
+        if(availableSlots.empty() == false)
+            while(insert_at < availableSlots.size() &&
+                  sn > availableSlots[insert_at])
+                insert_at++;
 
-		availableSlots.insert(availableSlots.begin() + insert_at, sn);
+        availableSlots.insert(availableSlots.begin() + insert_at, sn);
 
         return true;
-	}
-
-    ThreadWrapper::ThreadWrapper(std::string description_,
-    		   	   	   	   	     thread_boot_t thread_boot_,
-    		   	   	   	   	     void *data)
-    {
-		//stringstream ss;
-		//ss << "Creating thread [" << description_ << "].";
-		//log_info(ss.str(), this);
-
-		description = description_;
-        threadBoot = thread_boot_;
-        threadData = data;
-		threadInfo = NULL;
     }
 
-	ThreadWrapper::~ThreadWrapper()
-	{
-		if(threadInfo != NULL)
-			delete threadInfo;
-	}
+    ThreadWrapper::ThreadWrapper(std::string description_,
+                                             thread_boot_t thread_boot_,
+                                             void *data)
+    {
+        //stringstream ss;
+        //ss << "Creating thread [" << description_ << "].";
+        //log_info(ss.str(), this);
+
+        description = description_;
+        threadBoot = thread_boot_;
+        threadData = data;
+        threadInfo = NULL;
+    }
+
+    ThreadWrapper::~ThreadWrapper()
+    {
+        if(threadInfo != NULL)
+            delete threadInfo;
+    }
 
     bool ThreadWrapper::Start()
     {
         // We have been asked to start the thread.
 
-		//stringstream ss;
-		//ss << "Starting thread [" << description << "].";
-		//log_info(ss.str(), this);
+        //stringstream ss;
+        //ss << "Starting thread [" << description << "].";
+        //log_info(ss.str(), this);
 
-		// Make sure that this is the first/only start.
-		if(threadInfo != NULL)
-			return false;
+        // Make sure that this is the first/only start.
+        if(threadInfo != NULL)
+            return false;
 
         int sn;
         if(threadManager.AllocateSn(sn, &threadInfo) == false)
@@ -219,7 +219,7 @@ namespace threading
 
         pthread_t handle;
         if((pthread_create(&handle, NULL, _WindowsThreadHandler,
-        				   threadInfo)) != 0)
+                           threadInfo)) != 0)
             return false;
 
         threadInfo->SetHandle(handle);
@@ -231,14 +231,14 @@ namespace threading
     {
         // Block on the thread until it quits, and then clean it up.
 
-		pthread_join(threadInfo->GetHandle(), NULL);
+        pthread_join(threadInfo->GetHandle(), NULL);
 
         return true;
     }
 /*
-	void threading_system_shutdown_trigger()
-	{
-		threadManager.Cleanup();
-	}
+    void threading_system_shutdown_trigger()
+    {
+        threadManager.Cleanup();
+    }
 */
 }
